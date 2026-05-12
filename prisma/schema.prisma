@@ -1,0 +1,203 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  FREELANCER
+  CLIENT
+}
+
+enum JobStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum BidStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum ContractStatus {
+  ACTIVE
+  COMPLETED
+  TERMINATED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  FILE
+}
+
+model User {
+  id                       Int                       @id @default(autoincrement())
+  email                    String                    @unique
+  password                 String
+  username                 String                    @unique
+  role                     Role                      @default(FREELANCER)
+  profile                  Profile?
+  wallet                   Wallet?
+  companyId                Int?
+  company                  Company?                  @relation(fields: [companyId], references: [id])
+  jobs                     Job[]                     @relation("ClientJobs")
+  bids                     Bid[]
+  clientContracts          Contract[]                @relation("ClientContracts")
+  freelancerContracts      Contract[]                @relation("FreelancerContracts")
+  reviewsGiven             Review[]                  @relation("ReviewsGiven")
+  reviewsReceived          Review[]                  @relation("ReviewsReceived")
+  conversationParticipants ConversationParticipant[]
+  messages                 Message[]
+  createdAt                DateTime                  @default(now())
+  updatedAt                DateTime                  @updatedAt
+}
+
+model Profile {
+  id               Int     @id @default(autoincrement())
+  fullName         String?
+  bio              String?
+  skills           String?
+  services         String?
+  avatar           String?
+  summary          String?
+  addressLine1     String?
+  addressLine2     String?
+  city             String?
+  state            String?
+  country          String?
+  postalCode       String?
+  linkedin         String?
+  github           String?
+  educationEntries Json?
+  projects         Json?
+  userId           Int     @unique
+  user             User    @relation(fields: [userId], references: [id])
+}
+
+model Company {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String?
+  website     String?
+  users       User[]
+  createdAt   DateTime @default(now())
+}
+
+model Job {
+  id           Int       @id @default(autoincrement())
+  title        String
+  description  String    @db.Text
+  budget       Float
+  requirements String?   @db.Text
+  paymentNotes String?   @db.Text
+  milestones   Json?
+  status       JobStatus @default(OPEN)
+  clientId     Int
+  client       User      @relation("ClientJobs", fields: [clientId], references: [id])
+  bids         Bid[]
+  contract     Contract?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model Bid {
+  id           Int       @id @default(autoincrement())
+  amount       Float
+  message      String    @db.Text
+  status       BidStatus @default(PENDING)
+  jobId        Int
+  job          Job       @relation(fields: [jobId], references: [id])
+  freelancerId Int
+  freelancer   User      @relation(fields: [freelancerId], references: [id])
+  createdAt    DateTime  @default(now())
+
+  @@unique([jobId, freelancerId])
+}
+
+model Contract {
+  id           Int                    @id @default(autoincrement())
+  status       ContractStatus         @default(ACTIVE)
+  jobId        Int                    @unique
+  job          Job                    @relation(fields: [jobId], references: [id])
+  clientId     Int
+  freelancerId Int
+  client       User                   @relation("ClientContracts", fields: [clientId], references: [id])
+  freelancer   User                   @relation("FreelancerContracts", fields: [freelancerId], references: [id])
+  payment      Payment?
+  blockchainTx BlockchainTransaction?
+  createdAt    DateTime               @default(now())
+}
+
+model Payment {
+  id           Int                    @id @default(autoincrement())
+  amount       Float
+  status       String
+  contractId   Int                    @unique
+  contract     Contract               @relation(fields: [contractId], references: [id])
+  blockchainTx BlockchainTransaction?
+  createdAt    DateTime               @default(now())
+}
+
+model Wallet {
+  id      Int    @id @default(autoincrement())
+  address String @unique
+  chain   String
+  userId  Int    @unique
+  user    User   @relation(fields: [userId], references: [id])
+}
+
+model BlockchainTransaction {
+  id         Int       @id @default(autoincrement())
+  txHash     String    @unique
+  chain      String
+  status     String
+  contractId Int?      @unique
+  contract   Contract? @relation(fields: [contractId], references: [id])
+  paymentId  Int?      @unique
+  payment    Payment?  @relation(fields: [paymentId], references: [id])
+  createdAt  DateTime  @default(now())
+}
+
+model Conversation {
+  id           Int                       @id @default(autoincrement())
+  participants ConversationParticipant[]
+  messages     Message[]
+  createdAt    DateTime                  @default(now())
+}
+
+model ConversationParticipant {
+  id             Int          @id @default(autoincrement())
+  userId         Int
+  conversationId Int
+  user           User         @relation(fields: [userId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+}
+
+model Message {
+  id             Int          @id @default(autoincrement())
+  content        String
+  type           MessageType  @default(TEXT)
+  senderId       Int
+  sender         User         @relation(fields: [senderId], references: [id])
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  createdAt      DateTime     @default(now())
+}
+
+model Review {
+  id         Int      @id @default(autoincrement())
+  rating     Int
+  comment    String?
+  reviewerId Int
+  revieweeId Int
+  reviewer   User     @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  reviewee   User     @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+  createdAt  DateTime @default(now())
+}
