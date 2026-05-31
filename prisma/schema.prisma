@@ -26,6 +26,7 @@ enum BidStatus {
 }
 
 enum ContractStatus {
+  PENDING_START
   ACTIVE
   COMPLETED
   TERMINATED
@@ -35,6 +36,12 @@ enum MessageType {
   TEXT
   IMAGE
   FILE
+  TASK
+}
+
+enum ContractTaskStatus {
+  OPEN
+  DONE
 }
 
 model User {
@@ -43,6 +50,7 @@ model User {
   password                 String
   username                 String                    @unique
   role                     Role                      @default(FREELANCER)
+  coinBalance              Int                       @default(100)
   profile                  Profile?
   wallet                   Wallet?
   companyId                Int?
@@ -51,10 +59,15 @@ model User {
   bids                     Bid[]
   clientContracts          Contract[]                @relation("ClientContracts")
   freelancerContracts      Contract[]                @relation("FreelancerContracts")
+  clientCompletedProjects  CompletedProject[]        @relation("ClientCompletedProjects")
+  freelancerCompletedProjects CompletedProject[]     @relation("FreelancerCompletedProjects")
   reviewsGiven             Review[]                  @relation("ReviewsGiven")
   reviewsReceived          Review[]                  @relation("ReviewsReceived")
   conversationParticipants ConversationParticipant[]
   messages                 Message[]
+  contractTasksCreated     ContractTask[]            @relation("ContractTasksCreated")
+  notifications            Notification[]
+  coinTransactions         CoinTransaction[]
   createdAt                DateTime                  @default(now())
   updatedAt                DateTime                  @updatedAt
 }
@@ -98,6 +111,9 @@ model Job {
   requirements String?   @db.Text
   paymentNotes String?   @db.Text
   milestones   Json?
+  images       Json?
+  links        Json?
+  bidCost      Int       @default(10)
   status       JobStatus @default(OPEN)
   clientId     Int
   client       User      @relation("ClientJobs", fields: [clientId], references: [id])
@@ -122,17 +138,43 @@ model Bid {
 }
 
 model Contract {
-  id           Int                    @id @default(autoincrement())
-  status       ContractStatus         @default(ACTIVE)
-  jobId        Int                    @unique
-  job          Job                    @relation(fields: [jobId], references: [id])
+  id                        Int                    @id @default(autoincrement())
+  status                    ContractStatus         @default(PENDING_START)
+  jobId                     Int                    @unique
+  job                       Job                    @relation(fields: [jobId], references: [id])
+  clientId                  Int
+  freelancerId              Int
+  acceptedBidId             Int?
+  acceptedBidAmount         Float?
+  milestoneProgress         Json?
+  clientMarkedComplete      Boolean                @default(false)
+  freelancerMarkedComplete  Boolean                @default(false)
+  clientPaymentSent         Boolean                @default(false)
+  freelancerPaymentReceived Boolean                @default(false)
+  client                    User                   @relation("ClientContracts", fields: [clientId], references: [id])
+  freelancer                User                   @relation("FreelancerContracts", fields: [freelancerId], references: [id])
+  completedProject          CompletedProject?
+  payment                   Payment?
+  blockchainTx              BlockchainTransaction?
+  conversation              Conversation?
+  tasks                     ContractTask[]
+  createdAt                 DateTime               @default(now())
+  updatedAt                 DateTime               @updatedAt
+}
+
+model CompletedProject {
+  id           Int      @id @default(autoincrement())
+  contractId   Int      @unique
+  contract     Contract @relation(fields: [contractId], references: [id])
+  jobId        Int
+  title        String
+  description  String?  @db.Text
+  amount       Float?
   clientId     Int
   freelancerId Int
-  client       User                   @relation("ClientContracts", fields: [clientId], references: [id])
-  freelancer   User                   @relation("FreelancerContracts", fields: [freelancerId], references: [id])
-  payment      Payment?
-  blockchainTx BlockchainTransaction?
-  createdAt    DateTime               @default(now())
+  client       User     @relation("ClientCompletedProjects", fields: [clientId], references: [id])
+  freelancer   User     @relation("FreelancerCompletedProjects", fields: [freelancerId], references: [id])
+  completedAt  DateTime @default(now())
 }
 
 model Payment {
@@ -167,9 +209,28 @@ model BlockchainTransaction {
 
 model Conversation {
   id           Int                       @id @default(autoincrement())
+  directKey    String?                   @unique
+  contractId   Int?                      @unique
+  contract     Contract?                 @relation(fields: [contractId], references: [id], onDelete: Cascade)
   participants ConversationParticipant[]
   messages     Message[]
   createdAt    DateTime                  @default(now())
+  updatedAt    DateTime                  @updatedAt
+}
+
+model ContractTask {
+  id          Int                @id @default(autoincrement())
+  contractId  Int
+  contract    Contract           @relation(fields: [contractId], references: [id], onDelete: Cascade)
+  createdById Int
+  createdBy   User               @relation("ContractTasksCreated", fields: [createdById], references: [id])
+  title       String
+  description String?            @db.Text
+  status      ContractTaskStatus @default(OPEN)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([contractId, status])
 }
 
 model ConversationParticipant {
@@ -182,13 +243,31 @@ model ConversationParticipant {
 
 model Message {
   id             Int          @id @default(autoincrement())
-  content        String
+  content        String       @db.Text
   type           MessageType  @default(TEXT)
+  taskId         Int?
   senderId       Int
   sender         User         @relation(fields: [senderId], references: [id])
   conversationId Int
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String   @db.Text
+  link      String?
+  read      Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, read, createdAt])
 }
 
 model Review {
@@ -200,4 +279,16 @@ model Review {
   reviewer   User     @relation("ReviewsGiven", fields: [reviewerId], references: [id])
   reviewee   User     @relation("ReviewsReceived", fields: [revieweeId], references: [id])
   createdAt  DateTime @default(now())
+}
+
+model CoinTransaction {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  amount    Int
+  reason    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

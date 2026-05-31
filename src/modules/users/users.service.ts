@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../services/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
@@ -12,7 +12,7 @@ export class UsersService {
       where: { address: addressNormalized },
       include: {
         user: {
-          include: { profile: true },
+          include: { profile: true, wallet: true },
         },
       },
     });
@@ -66,6 +66,7 @@ export class UsersService {
         email: true,
         username: true,
         role: true,
+        coinBalance: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -82,6 +83,41 @@ export class UsersService {
     return this.prisma.user.findUnique({
       where: { id },
     });
+  }
+
+  /** Safe fields for clients viewing a freelancer (no email or password). */
+  async findPublicProfileById(id: number) {
+    if (!Number.isInteger(id) || id < 1) {
+      throw new NotFoundException('User not found');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        createdAt: true,
+        profile: {
+          select: {
+            fullName: true,
+            bio: true,
+            skills: true,
+            services: true,
+            avatar: true,
+            summary: true,
+            linkedin: true,
+            github: true,
+            city: true,
+            state: true,
+            country: true,
+            educationEntries: true,
+            projects: true,
+          },
+        },
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    return user;
   }
 
   async getAll() {

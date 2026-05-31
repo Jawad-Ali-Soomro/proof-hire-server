@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
 import { UsersService } from './users.service';
 
 @Controller('users')
@@ -13,6 +13,12 @@ export class UsersController {
       message: 'fetched registered users!',
       users,
     };
+  }
+
+  @Get('public/:id')
+  async getPublicProfile(@Param('id', ParseIntPipe) id: number) {
+    const user = await this.userService.findPublicProfileById(id);
+    return { user };
   }
 
   @Get('/:id')
